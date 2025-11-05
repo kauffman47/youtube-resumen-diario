@@ -49,17 +49,54 @@ def simple_fallback_summary(text, max_sentences=5, max_chars=1000):
 
 
 def summarize_with_deepai(text):
-    import os, requests
+    import os, requests, math
+
     api_key = os.getenv("DEEPAI_KEY")
     if not api_key:
         raise RuntimeError("DEEPAI_KEY no configurada en entorno")
+
     url = "https://api.deepai.org/api/summarization"
     headers = {"api-key": api_key}
-    data = {"text": text}
-    r = requests.post(url, headers=headers, data=data, timeout=60)
-    r.raise_for_status()
-    j = r.json()
-    return j.get("output") or j.get("summary") or j.get("result") or str(j)
+
+    def call_api(fragment):
+        data = {"text": fragment}
+        r = requests.post(url, headers=headers, data=data, timeout=60)
+        r.raise_for_status()
+        j = r.json()
+        return j.get("output") or j.get("summary") or j.get("result") or str(j)
+
+    # ---- dividir el texto ----
+    max_len = 9000
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + max_len
+        # cortar por el punto más cercano antes de pasarse
+        if end < len(text):
+            cut = text.rfind('.', start, end)
+            if cut != -1 and cut > start:
+                end = cut + 1
+        chunks.append(text[start:end].strip())
+        start = end
+
+    # ---- resumir cada parte ----
+    partial_summaries = []
+    for i, ch in enumerate(chunks, 1):
+        print(f"🧩 Enviando fragmento {i}/{len(chunks)} ({len(ch)} caracteres)")
+        try:
+            s = call_api(ch)
+        except requests.HTTPError as e:
+            print(f"⚠️ Error en fragmento {i}: {e}")
+            s = ch[:500] + "..."
+        partial_summaries.append(s.strip())
+
+    # ---- juntar y resumir el resultado ----
+    combined = "\n".join(partial_summaries)
+    if len(combined) > max_len:
+        print("🧠 Resumiendo resumen final...")
+        combined = call_api(combined[:max_len])
+
+    return combined.strip()
 
 
 # Puedes cambiar mediante env vars:
