@@ -35,5 +35,7 @@ jobs:
         TWILIO_TOKEN: ${{ secrets.TWILIO_TOKEN }}
         TRANSCRIPTAPI_KEY: ${{ secrets.TRANSCRIPTAPI_KEY }}
         DEEPAI_KEY: ${{ secrets.DEEPAI_KEY }}
+        CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
       run: |
         python main.py
