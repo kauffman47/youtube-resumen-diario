@@ -31,5 +31,6 @@ jobs:
         YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         TWILIO_SID: ${{ secrets.TWILIO_SID }}
         TWILIO_TOKEN: ${{ secrets.TWILIO_TOKEN }}
+        TRANSCRIPTAPI_KEY: ${{ secrets.TRANSCRIPTAPI_KEY }}
       run: |
         python main.py
