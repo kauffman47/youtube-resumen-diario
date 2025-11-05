@@ -20,7 +20,8 @@ jobs:
 
     - name: Instalar dependencias
       run: |
-        pip install -r requirements.txt
+        python -m pip install --upgrade pip
+        pip install --no-cache-dir openai google-api-python-client twilio youtube-transcript-api
 
     - name: Ejecutar script principal
       env:
