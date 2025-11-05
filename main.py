@@ -4,7 +4,6 @@
 import os
 import re
 import json
-import math
 import requests
 from googleapiclient.discovery import build
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -24,7 +23,6 @@ except Exception:
     pass
 
 # === VARIABLES DE CONFIGURACIÓN ===
-SUMMARIZER_METHOD = os.getenv("SUMMARIZER_METHOD", "cloudflare").lower()
 CHUNK_MAX_CHARS = int(os.getenv("CHUNK_MAX_CHARS", "12000"))
 YOUTUBER = os.getenv("YOUTUBER", "@JoseLuisCavatv")
 LAST_VIDEO_FILE = os.getenv("LAST_VIDEO_FILE", "last_video.json")
@@ -41,10 +39,12 @@ MAX_WHATSAPP_CHARS = int(os.getenv("MAX_WHATSAPP_CHARS", "1500"))
 # =========================================================
 # FUNCIONES AUXILIARES
 # =========================================================
+
 def safe_print(*a, **kw):
     print(*a, **kw)
 
 def sanitize_transcript(raw_text):
+    """Limpia texto o JSON devuelto por TranscriptAPI / YouTube."""
     text = raw_text if raw_text else ""
     stripped = text.strip()
     if stripped.startswith("{") or stripped.startswith("["):
@@ -74,6 +74,7 @@ def sanitize_transcript(raw_text):
                 text = " ".join(parts)
         except Exception:
             pass
+    # limpiar timestamps y residuos
     text = re.sub(r'\[\s*\d+[^\]]*?s\s*\]', ' ', text)
     text = re.sub(r'\[\s*\d{1,2}:\d{2}(?::\d{2})?\s*\]', ' ', text)
     text = re.sub(r'\(\s*\d{1,2}:\d{2}(?::\d{2})?\s*\)', ' ', text)
@@ -148,9 +149,10 @@ def get_transcript(video_id):
 # =========================================================
 # RESUMEN CON CLOUDFLARE
 # =========================================================
-def summarize_with_cloudflare(text, model="@cf/meta/llama-7b-instruct", sentences=8):
+def summarize_with_cloudflare(text, model="@cf/meta/llama-2-7b-chat-int8", sentences=8):
+    """Usa Cloudflare Workers AI para resumir texto."""
     account_id = os.getenv("CF_ACCOUNT_ID")
-    api_token  = os.getenv("CF_API_TOKEN")
+    api_token = os.getenv("CF_API_TOKEN")
     if not account_id or not api_token:
         raise RuntimeError("Faltan CF_ACCOUNT_ID / CF_API_TOKEN")
 
@@ -159,10 +161,12 @@ def summarize_with_cloudflare(text, model="@cf/meta/llama-7b-instruct", sentence
 
     url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}"
     headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
-    payload = {"messages": [
-        {"role": "system", "content": sys_prompt},
-        {"role": "user",   "content": user_prompt}
-    ]}
+    payload = {
+        "messages": [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+    }
 
     r = requests.post(url, headers=headers, json=payload, timeout=90)
     r.raise_for_status()
@@ -174,6 +178,7 @@ def summarize_with_cloudflare(text, model="@cf/meta/llama-7b-instruct", sentence
 # ENVÍO WHATSAPP
 # =========================================================
 def send_whatsapp_message(text):
+    """Envía el texto en partes si supera el límite de caracteres."""
     client = Client(TWILIO_SID, TWILIO_TOKEN)
     parts = []
     if len(text) <= MAX_WHATSAPP_CHARS:
@@ -223,6 +228,7 @@ def main():
         safe_print("✅ Proceso completado correctamente.")
     except Exception as e:
         safe_print("❌ Error en ejecución:", repr(e))
+
 
 if __name__ == "__main__":
     main()
