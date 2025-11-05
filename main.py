@@ -87,13 +87,35 @@ def save_last_video(video_id):
 from youtube_transcript_api import YouTubeTranscriptApi
 
 def get_transcript(video_id):
+    """
+    Intenta obtener subtítulos de YouTube.
+    Si no existen, descarga el audio y usa Whisper open-source localmente.
+    """
     from youtube_transcript_api import YouTubeTranscriptApi
+    from pytube import YouTube
+    import whisper
+
     try:
+        # Primero intentar subtítulos de YouTube
         transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=["es", "en"])
         text = " ".join([t["text"] for t in transcript])
+        print("✅ Transcripción obtenida desde subtítulos de YouTube.")
         return text
-    except Exception as e:
-        raise ValueError(f"No se pudo obtener la transcripción: {e}")
+    except Exception:
+        print("⚠️ No hay subtítulos, usando Whisper local (open-source)...")
+
+        # Descargar el audio
+        yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
+        stream = yt.streams.filter(only_audio=True).first()
+        audio_path = stream.download(filename="temp_audio.mp4")
+
+        # Transcribir con Whisper local
+        model = whisper.load_model("base")  # puedes usar "tiny" para más velocidad
+        result = model.transcribe(audio_path, language="es")
+
+        os.remove(audio_path)
+        print("✅ Transcripción generada con Whisper local.")
+        return result["text"]
 
 
 
