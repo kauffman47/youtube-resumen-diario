@@ -1,8 +1,8 @@
-openai
-youtube-transcript-api
 google-api-python-client
+youtube-transcript-api==0.6.2
+requests
 twilio
-transformers
-sentencepiece
-torch==2.2.0
+pytube
+ffmpeg-python
 sumy
+nltk
