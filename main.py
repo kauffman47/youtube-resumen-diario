@@ -84,38 +84,45 @@ def save_last_video(video_id):
 
 # ==== 3. DESCARGAR TRANSCRIPCIÓN ====
 
-from youtube_transcript_api import YouTubeTranscriptApi
+import requests
 
 def get_transcript(video_id):
     """
     Intenta obtener subtítulos de YouTube.
-    Si no existen, descarga el audio y usa Whisper open-source localmente.
+    Si no existen, usa TranscriptAPI (plan gratuito) para obtener la transcripción.
     """
     from youtube_transcript_api import YouTubeTranscriptApi
-    from pytube import YouTube
-    import whisper
 
     try:
-        # Primero intentar subtítulos de YouTube
+        # 1️⃣ Intentar obtener subtítulos de YouTube (gratis)
         transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=["es", "en"])
         text = " ".join([t["text"] for t in transcript])
         print("✅ Transcripción obtenida desde subtítulos de YouTube.")
         return text
+
     except Exception:
-        print("⚠️ No hay subtítulos, usando Whisper local (open-source)...")
+        print("⚠️ No hay subtítulos, usando TranscriptAPI...")
 
-        # Descargar el audio
-        yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
-        stream = yt.streams.filter(only_audio=True).first()
-        audio_path = stream.download(filename="temp_audio.mp4")
+        api_key = os.getenv("TRANSCRIPTAPI_KEY")
+        url = "https://api.transcriptapi.com/v2/youtube/transcript"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {"url": f"https://www.youtube.com/watch?v={video_id}"}
 
-        # Transcribir con Whisper local
-        model = whisper.load_model("base")  # puedes usar "tiny" para más velocidad
-        result = model.transcribe(audio_path, language="es")
+        response = requests.post(url, headers=headers, json=payload)
 
-        os.remove(audio_path)
-        print("✅ Transcripción generada con Whisper local.")
-        return result["text"]
+        if response.status_code != 200:
+            raise ValueError(f"❌ Error de TranscriptAPI: {response.status_code} {response.text}")
+
+        data = response.json()
+        text = data.get("text") or data.get("transcript") or ""
+        if not text:
+            raise ValueError("TranscriptAPI no devolvió texto.")
+        
+        print("✅ Transcripción obtenida con TranscriptAPI.")
+        return text
 
 
 
