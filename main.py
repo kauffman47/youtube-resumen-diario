@@ -5,9 +5,19 @@ from youtube_transcript_api import YouTubeTranscriptApi
 from openai import OpenAI
 from twilio.rest import Client
 import requests
-import os
+from transformers import pipeline
+from sumy.parsers.plaintext import PlaintextParser
+from sumy.nlp.tokenizers import Tokenizer
+from sumy.summarizers.text_rank import TextRankSummarizer
 
 # ==== CONFIGURACIÓN ====
+
+# CONFIG (puedes ajustarlo con variables de entorno)
+SUMMARIZER_METHOD = os.getenv("SUMMARIZER_METHOD", "hybrid")  # "hybrid", "abstractive", "extractive"
+SUMMARIZER_MODEL = os.getenv("SUMMARIZER_MODEL", "sshleifer/distilbart-cnn-12-6")
+EXTRACTIVE_SENTENCES = int(os.getenv("EXTRACTIVE_SENTENCES", "10"))
+CHUNK_MAX_CHARS = int(os.getenv("CHUNK_MAX_CHARS", "12000"))
+
 
 # Nombre de usuario o ID del canal de YouTube que quieres seguir
 YOUTUBER = "@JoseLuisCavatv"  # <- cámbialo por el canal que quieras (ej: "VisualPolitik")
@@ -124,20 +134,82 @@ def get_transcript(video_id):
 
 
 # ==== 4. RESUMIR CON OPENAI ====
+# lazy init for transformers pipeline
+_summarizer_pipeline = None
+def get_transformer_summarizer():
+    global _summarizer_pipeline
+    if _summarizer_pipeline is None:
+        # device=-1 -> CPU; si tienes GPU, pasa device=0
+        _summarizer_pipeline = pipeline("summarization", model=SUMMARIZER_MODEL, truncation=True, device=-1)
+    return _summarizer_pipeline
 
+# chunk helper (por caracteres intentando cortar en puntos)
+def chunk_text_by_chars(text, max_chars=CHUNK_MAX_CHARS):
+    chunks = []
+    start = 0
+    L = len(text)
+    while start < L:
+        end = min(L, start + max_chars)
+        if end < L:
+            # intenta cortar en final de frase
+            nxt = text.rfind('.', start, end)
+            if nxt != -1 and nxt > start:
+                end = nxt + 1
+        chunks.append(text[start:end].strip())
+        start = end
+    return chunks
+
+# EXTRACTIVE: sumy TextRank
+def summarize_with_sumy(text, sentences_count=EXTRACTIVE_SENTENCES, language="spanish"):
+    parser = PlaintextParser.from_string(text, Tokenizer(language))
+    summarizer = TextRankSummarizer()
+    summary_sentences = summarizer(parser.document, sentences_count)
+    return " ".join([str(s) for s in summary_sentences])
+
+# ABSTRACTIVE: transformers distilBART (por chunks)
+def summarize_with_transformers(text):
+    summarizer = get_transformer_summarizer()
+    chunks = chunk_text_by_chars(text, max_chars=CHUNK_MAX_CHARS)
+    summaries = []
+    for chunk in chunks:
+        # max_length/min_length dependen del modelo; ajústalos si hace falta
+        out = summarizer(chunk, max_length=250, min_length=60)[0]["summary_text"]
+        summaries.append(out.strip())
+    if len(summaries) == 1:
+        return summaries[0]
+    # si hay varios resúmenes, combina y haz un resumen final
+    combined = " ".join(summaries)
+    final = summarizer(combined, max_length=300, min_length=120)[0]["summary_text"]
+    return final
+
+# HYBRID: sumarizar por extractivo primero (ahorra tokens), luego pulir con transformers
+def summarize_hybrid(text):
+    # 1. Extraer frases clave por chunks
+    chunks = chunk_text_by_chars(text, max_chars=CHUNK_MAX_CHARS)
+    reduced_parts = []
+    for c in chunks:
+        reduced_parts.append(summarize_with_sumy(c, sentences_count=EXTRACTIVE_SENTENCES//max(1,len(chunks))))
+    reduced = " ".join(reduced_parts)
+    # 2. Pulir con transformers
+    return summarize_with_transformers(reduced)
+    
 def summarize_text(text, title):
-    prompt = f"""
-Haz un resumen estructurado y claro del siguiente texto, similar al ejemplo que te mostré antes.
-Texto del video "{title}":
-{text}
-"""
-    completion = client_openai.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=1500
-    )
-    return completion.choices[0].message.content.strip()
+    """
+    Devuelve un resumen del texto. Método configurable por SUMMARIZER_METHOD env var.
+    """
+    if not text or len(text.strip()) == 0:
+        return "No hay transcripción para resumir."
 
+    if SUMMARIZER_METHOD == "extractive":
+        resumen = summarize_with_sumy(text)
+    elif SUMMARIZER_METHOD == "abstractive":
+        resumen = summarize_with_transformers(text)
+    else:  # hybrid
+        resumen = summarize_hybrid(text)
+
+    # ajustar formato final
+    header = f"Resumen del vídeo '{title}':\n\n"
+    return header + resumen.strip()
 # ==== 5. ENVIAR POR WHATSAPP ====
 
 def send_whatsapp_message(text):
