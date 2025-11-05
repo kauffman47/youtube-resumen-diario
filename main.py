@@ -4,6 +4,7 @@
 # Requiere siempre: google-api-python-client, youtube-transcript-api, requests, twilio, sumy
 
 import os
+import re
 import json
 import math
 import requests
@@ -30,17 +31,21 @@ except Exception as _e:
 
 # Fallback sencillo si sumy/transformers fallan: tomar las primeras frases
 def simple_fallback_summary(text, max_sentences=5, max_chars=1000):
+    """
+    Fallback muy conservador: limpiar texto y devolver primeras oraciones útiles.
+    """
     if not text:
         return ""
-    # separar por puntos (heurística básica, muy rápida)
-    sentences = [s.strip() for s in text.replace("\r","").split('.') if s.strip()]
+    text = sanitize_transcript(text)
+    # usar split por punto como heurística, pero ahora el texto ya está limpio
+    sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
     if not sentences:
         return text[:max_chars]
     chosen = sentences[:max_sentences]
-    out = '. '.join(chosen)
+    out = ' '.join(chosen)
     if len(out) > max_chars:
         return out[:max_chars-3].rstrip() + "..."
-    return out + ('.' if not out.endswith('.') else '')
+    return out if out.endswith('.') else out + '.'
 
 # Puedes cambiar mediante env vars:
 # SUMMARIZER_METHOD: "hybrid" (default), "abstractive", "extractive"
@@ -140,34 +145,94 @@ def is_new_video(video_id):
 def save_last_video(video_id):
     with open(LAST_VIDEO_FILE, "w", encoding="utf-8") as f:
         json.dump({"last_video_id": video_id}, f)
+# --- Sanitizador / parser de la respuesta de transcriptapi ---
+def sanitize_transcript(raw_text):
+    """
+    Si raw_text es JSON, extrae campos obvios. Luego limpia timestamps y corchetes.
+    Devuelve texto "plano" listo para resumir.
+    """
+    text = raw_text if raw_text is not None else ""
 
+    # 1) si es JSON textual, parsear e intentar extraer campo útil
+    stripped = text.strip()
+    if stripped.startswith("{") or stripped.startswith("["):
+        try:
+            j = json.loads(stripped)
+            # si es dict y tiene keys útiles, extraer
+            if isinstance(j, dict):
+                for key in ("transcript", "text", "captions", "body"):
+                    if key in j and isinstance(j[key], (str, list, dict)):
+                        candidate = j[key]
+                        # si es lista, juntar textos
+                        if isinstance(candidate, list):
+                            text = " ".join([c if isinstance(c, str) else str(c) for c in candidate])
+                        elif isinstance(candidate, dict):
+                            # si es dict, intentar fields dentro
+                            inner = None
+                            for k2 in ("text","transcript","caption"):
+                                if k2 in candidate:
+                                    inner = candidate[k2]; break
+                            text = inner if inner else json.dumps(candidate)
+                        else:
+                            text = candidate
+                        break
+                else:
+                    # si no encontró keys obvias, intentar juntar lista o stringify
+                    if isinstance(j, list):
+                        parts=[]
+                        for it in j:
+                            if isinstance(it, dict):
+                                # posible formato de youtube_transcript_api: {'text': '...', 'start':..}
+                                parts.append(it.get('text') or json.dumps(it))
+                            else:
+                                parts.append(str(it))
+                        text = " ".join(parts)
+                    else:
+                        # fallback: stringify JSON
+                        text = " ".join([str(v) for v in j.values()]) if isinstance(j, dict) else str(j)
+        except Exception:
+            # no parseable JSON -> seguir con raw_text
+            text = raw_text
+
+    # 2) limpiar timestamps y marcas comunes
+    # eliminar patrones tipo [7. 359s], [11. 2s], [00:01:23], (00:01) y marcas con 's'
+    text = re.sub(r'\[\s*\d+[^\]]*?s\s*\]', ' ', text)        # [7. 359s], [11. 2s]
+    text = re.sub(r'\[\s*\d{1,2}:\d{2}(?::\d{2})?\s*\]', ' ', text)  # [00:01:23]
+    text = re.sub(r'\(\s*\d{1,2}:\d{2}(?::\d{2})?\s*\)', ' ', text)  # (00:01)
+    text = re.sub(r'\d{1,2}:\d{2}(?::\d{2})?', ' ', text)       # 00:01:23 inline times
+    # eliminar timestamps con formato "7. 359s" sin corchetes (poco probable)
+    text = re.sub(r'\b\d+\.\s*\d+s\b', ' ', text)
+    # eliminar JSON residuals como {"video_id":...}
+    text = re.sub(r'[\{\}\"]', ' ', text)
+    # compactar espacios
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
 # ================= TRANSCRIPCIÓN =================
 
 def get_transcript(video_id):
     """
     Intenta subtítulos oficiales; si no, usa transcriptapi.com con la URL completa.
-    Devuelve string.
+    Normaliza la respuesta (JSON o texto) y devuelve texto limpio.
     """
     try:
-        # youtube_transcript_api acepta video_id
         transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=["es", "en"])
         text = " ".join([t.get("text", "") for t in transcript]).strip()
         safe_print("✅ Transcripción obtenida desde subtítulos de YouTube.")
-        return text
+        return sanitize_transcript(text)
     except Exception as e:
         safe_print("⚠️ No hay subtítulos accesibles con youtube_transcript_api:", str(e))
         safe_print("↪ Intentando TranscriptAPI (externa)...")
         api_key = os.getenv("TRANSCRIPTAPI_KEY")
         url = "https://transcriptapi.com/api/v2/youtube/transcript"
         video_url = f"https://www.youtube.com/watch?v={video_id}"
-        params = {"video_url": video_url, "format": "text"}
+        params = {"video_url": video_url, "format": "text"}  # algunos endpoints devuelven JSON incluso con format=text
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         resp = requests.get(url, headers=headers, params=params, timeout=90)
         if resp.status_code != 200:
             raise ValueError(f"❌ Error TranscriptAPI: {resp.status_code} {resp.text}")
-        safe_print("✅ Transcripción obtenida con TranscriptAPI.")
-        return resp.text
-
+        safe_print("✅ Transcripción obtenida con TranscriptAPI (raw). Normalizando...")
+        cleaned = sanitize_transcript(resp.text)
+        return cleaned
 # ================= SUMMARIZADORES =================
 
 def chunk_text_by_chars(text, max_chars=CHUNK_MAX_CHARS):
