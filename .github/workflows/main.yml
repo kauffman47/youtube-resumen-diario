@@ -34,5 +34,6 @@ jobs:
         TWILIO_SID: ${{ secrets.TWILIO_SID }}
         TWILIO_TOKEN: ${{ secrets.TWILIO_TOKEN }}
         TRANSCRIPTAPI_KEY: ${{ secrets.TRANSCRIPTAPI_KEY }}
+        DEEPAI_KEY: ${{ secrets.DEEPAI_KEY }}
       run: |
         python main.py
