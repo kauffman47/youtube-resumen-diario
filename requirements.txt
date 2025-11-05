@@ -2,3 +2,7 @@ openai
 youtube-transcript-api
 google-api-python-client
 twilio
+transformers
+sentencepiece
+torch==2.2.0
+sumy
