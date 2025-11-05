@@ -19,17 +19,42 @@ youtube = build("youtube", "v3", developerKey=os.getenv("YOUTUBE_API_KEY"))
 
 # ==== 1. OBTENER ÚLTIMO VIDEO DEL CANAL ====
 
-def get_latest_video_id(channel_username):
-    """Devuelve el ID del último video del canal"""
-    channel_response = youtube.channels().list(
+def get_latest_video_id(channel_identifier):
+    """
+    Devuelve el ID y título del último video del canal.
+    Acepta tanto username (antiguo) como @handle o Channel ID.
+    """
+    # Si el canal es un handle (empieza con @)
+    if channel_identifier.startswith("@"):
+        search_response = youtube.search().list(
+            part="snippet",
+            q=channel_identifier,
+            type="channel",
+            maxResults=1
+        ).execute()
+        if not search_response.get("items"):
+            raise ValueError("No se encontró canal con ese handle.")
+        channel_id = search_response["items"][0]["snippet"]["channelId"]
+    # Si es un Channel ID (empieza por UC)
+    elif channel_identifier.startswith("UC"):
+        channel_id = channel_identifier
+    # Si es un username antiguo
+    else:
+        channel_response = youtube.channels().list(
+            part="id",
+            forUsername=channel_identifier
+        ).execute()
+        if not channel_response.get("items"):
+            raise ValueError("No se encontró canal con ese nombre de usuario.")
+        channel_id = channel_response["items"][0]["id"]
+
+    # Obtener la playlist de subidas del canal
+    channel_details = youtube.channels().list(
         part="contentDetails",
-        forUsername=channel_username
+        id=channel_id
     ).execute()
 
-    if not channel_response["items"]:
-        raise ValueError("No se encontró el canal, revisa el nombre de usuario.")
-
-    uploads_playlist_id = channel_response["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+    uploads_playlist_id = channel_details["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
 
     playlist_items = youtube.playlistItems().list(
         playlistId=uploads_playlist_id,
@@ -39,6 +64,7 @@ def get_latest_video_id(channel_username):
 
     video_id = playlist_items["items"][0]["snippet"]["resourceId"]["videoId"]
     title = playlist_items["items"][0]["snippet"]["title"]
+
     return video_id, title
 
 # ==== 2. COMPROBAR SI ES NUEVO ====
