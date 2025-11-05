@@ -1,0 +1,32 @@
+name: Ejecutar rutina diaria
+
+on:
+  schedule:
+    - cron: "5 13 * * *"   # Se ejecuta cada día a las 08:00 UTC (puedes cambiar la hora)
+  workflow_dispatch:       # Permite ejecutarlo manualmente desde GitHub
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Clonar el repositorio
+      uses: actions/checkout@v4
+
+    - name: Configurar Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Instalar dependencias
+      run: |
+        pip install -r requirements.txt
+
+    - name: Ejecutar script principal
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        TWILIO_SID: ${{ secrets.TWILIO_SID }}
+        TWILIO_TOKEN: ${{ secrets.TWILIO_TOKEN }}
+      run: |
+        python main.py
