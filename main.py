@@ -19,6 +19,29 @@ from sumy.summarizers.text_rank import TextRankSummarizer
 
 # ================= CONFIGURACIÓN =================
 
+# --- Añade esto en la parte superior, tras los imports ---
+# Asegurar recursos NLTK necesarios para sumy/tokenizers (evita fallos en CI)
+try:
+    import nltk
+    # descarga silenciosa; si ya existe no vuelve a bajar
+    nltk.download('punkt', quiet=True)
+except Exception as _e:
+    safe_print("⚠️ No se pudo descargar recursos NLTK (punkt). Si ejecutas en CI, añade 'python -c \"import nltk; nltk.download(\"punkt\")\"' al workflow). Error:", repr(_e))
+
+# Fallback sencillo si sumy/transformers fallan: tomar las primeras frases
+def simple_fallback_summary(text, max_sentences=5, max_chars=1000):
+    if not text:
+        return ""
+    # separar por puntos (heurística básica, muy rápida)
+    sentences = [s.strip() for s in text.replace("\r","").split('.') if s.strip()]
+    if not sentences:
+        return text[:max_chars]
+    chosen = sentences[:max_sentences]
+    out = '. '.join(chosen)
+    if len(out) > max_chars:
+        return out[:max_chars-3].rstrip() + "..."
+    return out + ('.' if not out.endswith('.') else '')
+
 # Puedes cambiar mediante env vars:
 # SUMMARIZER_METHOD: "hybrid" (default), "abstractive", "extractive"
 SUMMARIZER_METHOD = os.getenv("SUMMARIZER_METHOD", "hybrid").lower()
@@ -223,12 +246,14 @@ def summarize_text(text, title):
             resumen = summarize_hybrid(text)
     except Exception as e:
         safe_print("⚠️ Error en summarizer avanzado:", str(e))
-        safe_print("↪ Fallback a extractive (sumy).")
+        safe_print("↪ Intentando fallback extractive (sumy)...")
         try:
             resumen = summarize_with_sumy(text)
         except Exception as e2:
-            safe_print("❌ Fallback falló:", str(e2))
-            resumen = "Error generando resumen."
+            safe_print("❌ Fallback con sumy falló:", str(e2))
+            safe_print("↪ Usando fallback sencillo (primeras frases).")
+            resumen = simple_fallback_summary(text, max_sentences=6, max_chars=1200)
+
 
     header = f"Resumen del vídeo '{title}':\n\n"
     final = header + resumen.strip()
