@@ -8,7 +8,7 @@ from twilio.rest import Client
 # ==== CONFIGURACIÓN ====
 
 # Nombre de usuario o ID del canal de YouTube que quieres seguir
-YOUTUBER = "JoseLuisCavatv"  # <- cámbialo por el canal que quieras (ej: "VisualPolitik")
+YOUTUBER = "@JoseLuisCavatv"  # <- cámbialo por el canal que quieras (ej: "VisualPolitik")
 
 # Ruta del archivo donde guardaremos el último video procesado
 LAST_VIDEO_FILE = "last_video.json"
