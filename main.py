@@ -132,7 +132,7 @@ Texto del video "{title}":
 {text}
 """
     completion = client_openai.chat.completions.create(
-        model="gpt-5-turbo",
+        model="gpt-5",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=1500
     )
