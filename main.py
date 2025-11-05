@@ -47,6 +47,21 @@ def simple_fallback_summary(text, max_sentences=5, max_chars=1000):
         return out[:max_chars-3].rstrip() + "..."
     return out if out.endswith('.') else out + '.'
 
+
+def summarize_with_deepai(text):
+    import os, requests
+    api_key = os.getenv("DEEPAI_KEY")
+    if not api_key:
+        raise RuntimeError("DEEPAI_KEY no configurada en entorno")
+    url = "https://api.deepai.org/api/summarization"
+    headers = {"api-key": api_key}
+    data = {"text": text}
+    r = requests.post(url, headers=headers, data=data, timeout=60)
+    r.raise_for_status()
+    j = r.json()
+    return j.get("output") or j.get("summary") or j.get("result") or str(j)
+
+
 # Puedes cambiar mediante env vars:
 # SUMMARIZER_METHOD: "hybrid" (default), "abstractive", "extractive"
 SUMMARIZER_METHOD = os.getenv("SUMMARIZER_METHOD", "hybrid").lower()
@@ -378,7 +393,7 @@ def main():
         transcript = get_transcript(video_id)
 
         safe_print("Generando resumen...")
-        resumen = summarize_text(transcript, title)
+        resumen = summarize_with_deepai(transcript)
 
         safe_print("Enviando resumen por WhatsApp...")
         send_whatsapp_message(resumen)
