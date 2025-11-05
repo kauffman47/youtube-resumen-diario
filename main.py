@@ -4,6 +4,8 @@ from googleapiclient.discovery import build
 from youtube_transcript_api import YouTubeTranscriptApi
 from openai import OpenAI
 from twilio.rest import Client
+import requests
+import os
 
 # ==== CONFIGURACIÓN ====
 
@@ -84,17 +86,15 @@ def save_last_video(video_id):
 
 # ==== 3. DESCARGAR TRANSCRIPCIÓN ====
 
-import requests
-
 def get_transcript(video_id):
     """
     Intenta obtener subtítulos de YouTube.
-    Si no existen, usa TranscriptAPI (plan gratuito) para obtener la transcripción.
+    Si no existen, usa TranscriptAPI (gratuita) para obtener la transcripción.
     """
     from youtube_transcript_api import YouTubeTranscriptApi
 
     try:
-        # 1️⃣ Intentar obtener subtítulos de YouTube (gratis)
+        # 1️⃣ Intentar subtítulos de YouTube
         transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=["es", "en"])
         text = " ".join([t["text"] for t in transcript])
         print("✅ Transcripción obtenida desde subtítulos de YouTube.")
@@ -104,25 +104,22 @@ def get_transcript(video_id):
         print("⚠️ No hay subtítulos, usando TranscriptAPI...")
 
         api_key = os.getenv("TRANSCRIPTAPI_KEY")
-        url = "https://api.transcriptapi.com/v2/youtube/transcript"
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
+        url = "https://transcriptapi.com/api/v2/youtube/transcript"
+        params = {
+            "video_url": video_id,
+            "format": "text"  # también puedes usar "json"
         }
-        payload = {"url": f"https://www.youtube.com/watch?v={video_id}"}
+        headers = {
+            "Authorization": f"Bearer {api_key}"
+        }
 
-        response = requests.post(url, headers=headers, json=payload)
+        response = requests.get(url, headers=headers, params=params, timeout=60)
 
         if response.status_code != 200:
             raise ValueError(f"❌ Error de TranscriptAPI: {response.status_code} {response.text}")
 
-        data = response.json()
-        text = data.get("text") or data.get("transcript") or ""
-        if not text:
-            raise ValueError("TranscriptAPI no devolvió texto.")
-        
         print("✅ Transcripción obtenida con TranscriptAPI.")
-        return text
+        return response.text
 
 
 
