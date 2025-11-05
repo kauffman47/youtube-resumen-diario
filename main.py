@@ -87,17 +87,14 @@ def save_last_video(video_id):
 from youtube_transcript_api import YouTubeTranscriptApi
 
 def get_transcript(video_id):
+    from youtube_transcript_api import YouTubeTranscriptApi
     try:
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-        try:
-            transcript = transcript_list.find_transcript(['es'])
-        except:
-            transcript = transcript_list.find_transcript(['en'])
-        data = transcript.fetch()
-        text = " ".join([item["text"] for item in data])
+        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=["es", "en"])
+        text = " ".join([t["text"] for t in transcript])
         return text
     except Exception as e:
         raise ValueError(f"No se pudo obtener la transcripción: {e}")
+
 
 
 # ==== 4. RESUMIR CON OPENAI ====
