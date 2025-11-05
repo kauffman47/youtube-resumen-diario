@@ -148,7 +148,7 @@ def get_transcript(video_id):
 # =========================================================
 # RESUMEN CON CLOUDFLARE
 # =========================================================
-def summarize_with_cloudflare(text, model="@cf/meta/llama-3-8b-instruct", sentences=8):
+def summarize_with_cloudflare(text, model="@cf/meta/llama-7b-instruct", sentences=8):
     account_id = os.getenv("CF_ACCOUNT_ID")
     api_token  = os.getenv("CF_API_TOKEN")
     if not account_id or not api_token:
